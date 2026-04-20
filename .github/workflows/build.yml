@@ -1,0 +1,122 @@
+name: Build
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+
+env:
+  CX_VERSION: '26.1.0'
+  CX_TARBALL_SHA256: 'e4ec87d5821a009dd1f1d2e36ffe2e24b8fcbae9516375ea42f95a16928ab8fa'
+
+jobs:
+  build:
+    name: Build
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: read
+      id-token: write
+    strategy:
+      matrix:
+        target:
+          - x86_64-apple-darwin
+        include:
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install dependencies (macOS)
+        if: ${{ startsWith(matrix.runner, 'macos-') }}
+        run: brew install bison gstreamer mingw-w64 molten-vk pkgconfig
+      - name: Download Crossover sources
+        run: |
+          TARBALL_NAME="crossover-sources-$CX_VERSION.tar.gz"
+          curl -fsSO "https://media.codeweavers.com/pub/crossover/source/$TARBALL_NAME"
+          printf %s "$CX_TARBALL_SHA256 $TARBALL_NAME" | sha256sum -c --quiet -
+          tar -xzf "$TARBALL_NAME" sources/wine
+      - name: Build
+        working-directory: sources/wine
+        run: |
+          LDFLAGS=-L"$(brew --prefix)/lib"
+          PATH="$(brew --prefix bison)/bin:$PATH"
+          export LDFLAGS PATH
+
+          ./configure \
+            --prefix="$(brew --prefix)/opt/wine" \
+            --enable-archs=i386,x86_64 \
+            --disable-tests \
+            --disable-winebth_sys \
+            --without-alsa \
+            --without-capi \
+            --with-coreaudio \
+            --with-cups \
+            --without-dbus \
+            --with-ffmpeg \
+            --with-freetype \
+            --with-gettext \
+            --without-gettextpo \
+            --without-gphoto \
+            --with-gnutls \
+            --without-gssapi \
+            --with-gstreamer \
+            --with-inotify \
+            --without-krb5 \
+            --with-mingw="$(brew --prefix mingw-w64)/bin/x86_64-w64-mingw32-gcc" \
+            --without-netapi \
+            --with-opencl \
+            --without-opengl \
+            --without-oss \
+            --with-pcap \
+            --with-pcsclite \
+            --with-pthread \
+            --without-pulse \
+            --without-sane \
+            --with-sdl \
+            --without-udev \
+            --with-unwind \
+            --without-usb \
+            --without-v4l2 \
+            --with-vulkan \
+            --without-wayland \
+            --without-x \
+            --without-inotify
+
+          if command -v sysctl > /dev/null; then
+            nproc="$(sysctl -n hw.logicalcpu)" || true
+          fi
+          if [ -z "$nproc" ] && command -v nproc > /dev/null; then
+            nproc="$(nproc)" || true
+          fi
+          make ${nproc:+-j"$nproc"}
+          make DESTDIR=../../dist install
+      - run: tar -czf ../"winecx-$CX_VERSION-${{ matrix.target }}.tar.gz" -- *
+        working-directory: dist
+      - uses: actions/attest@v4
+        with:
+          subject-path: winecx-${{ env.CX_VERSION }}-${{ matrix.target }}.tar.gz
+      - name: Upload the artifact
+        uses: actions/upload-artifact@v7
+        with:
+          path: winecx-${{ env.CX_VERSION }}-${{ matrix.target }}.tar.gz
+  release:
+    name: Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifact
+          merge-multiple: true
+      - name: Create release
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+        with:
+          files: artifact/*
+          draft: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
