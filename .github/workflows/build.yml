@@ -6,10 +6,6 @@ on:
       - '*'
   workflow_dispatch:
 
-env:
-  CX_VERSION: '26.1.0'
-  CX_TARBALL_SHA256: 'e4ec87d5821a009dd1f1d2e36ffe2e24b8fcbae9516375ea42f95a16928ab8fa'
-
 jobs:
   build:
     name: Build
@@ -26,73 +22,94 @@ jobs:
         include:
           - target: x86_64-apple-darwin
             runner: macos-15-intel
+    env:
+      CX_VERSION: '26.1.0'
+      CX_TARBALL_SHA256: 'e4ec87d5821a009dd1f1d2e36ffe2e24b8fcbae9516375ea42f95a16928ab8fa'
+      WINECX_DEPENDENCIES: 'bison ffmpeg freetype gstreamer mingw-w64 molten-vk pkgconfig'
+      CC: clang
+      CXX: clang++
+      CFLAGS: -O3
+      LDFLAGS: '-Wl,-headerpad_max_install_names -Wl,-rpath,@loader_path/../../'
     steps:
       - uses: actions/checkout@v5
-      - name: Install dependencies (macOS)
-        if: ${{ startsWith(matrix.runner, 'macos-') }}
-        run: brew install bison gstreamer mingw-w64 molten-vk pkgconfig
-      - name: Download Crossover sources
+      - name: Set up dependencies
         run: |
-          TARBALL_NAME="crossover-sources-$CX_VERSION.tar.gz"
-          curl -fsSO "https://media.codeweavers.com/pub/crossover/source/$TARBALL_NAME"
-          printf %s "$CX_TARBALL_SHA256 $TARBALL_NAME" | sha256sum -c --quiet -
-          tar -xzf "$TARBALL_NAME" sources/wine
+          {
+          	cx_tarball_name="crossover-sources-$CX_VERSION.tar.gz"
+          	curl -fsSO "https://media.codeweavers.com/pub/crossover/source/$cx_tarball_name"
+          	printf %s "$CX_TARBALL_SHA256 $cx_tarball_name" | sha256sum -c --quiet -
+          	tar -xzf "$cx_tarball_name" sources/wine
+          } &
+
+          if ${{ startsWith(matrix.runner, 'macos-') }}; then
+          	# shellcheck disable=SC2086
+          	brew install -- $WINECX_DEPENDENCIES
+          fi
+
+          wait
+      - name: Set environment variables
+        run: |
+          library_path="$(brew --prefix)/lib"
+          printf %s "LIBRARY_PATH=$library_path" >> "$GITHUB_ENV"
+          path="$(brew --prefix bison)/bin"
+          printf %s "$path" >> "$GITHUB_PATH"
       - name: Build
         working-directory: sources/wine
         run: |
-          LDFLAGS=-L"$(brew --prefix)/lib"
-          PATH="$(brew --prefix bison)/bin:$PATH"
-          export LDFLAGS PATH
+          export LIBRARY_PATH PATH
+
+          mingw_prefix="$(brew --prefix mingw-w64)"
 
           ./configure \
-            --prefix="$(brew --prefix)/opt/wine" \
-            --enable-archs=i386,x86_64 \
-            --disable-tests \
-            --disable-winebth_sys \
-            --without-alsa \
-            --without-capi \
-            --with-coreaudio \
-            --with-cups \
-            --without-dbus \
-            --with-ffmpeg \
-            --with-freetype \
-            --with-gettext \
-            --without-gettextpo \
-            --without-gphoto \
-            --with-gnutls \
-            --without-gssapi \
-            --with-gstreamer \
-            --with-inotify \
-            --without-krb5 \
-            --with-mingw="$(brew --prefix mingw-w64)/bin/x86_64-w64-mingw32-gcc" \
-            --without-netapi \
-            --with-opencl \
-            --without-opengl \
-            --without-oss \
-            --with-pcap \
-            --with-pcsclite \
-            --with-pthread \
-            --without-pulse \
-            --without-sane \
-            --with-sdl \
-            --without-udev \
-            --with-unwind \
-            --without-usb \
-            --without-v4l2 \
-            --with-vulkan \
-            --without-wayland \
-            --without-x \
-            --without-inotify
+          	--prefix= \
+          	--enable-archs=i386,x86_64 \
+          	--disable-tests \
+          	--disable-winebth_sys \
+          	--disable-winemenubuilder \
+          	--without-alsa \
+          	--without-capi \
+          	--with-coreaudio \
+          	--with-cups \
+          	--without-dbus \
+          	--with-ffmpeg \
+          	--without-fontconfig \
+          	--with-freetype \
+          	--with-gettext \
+          	--without-gettextpo \
+          	--without-gphoto \
+          	--with-gnutls \
+          	--without-gssapi \
+          	--with-gstreamer \
+          	--without-inotify \
+          	--without-krb5 \
+          	--with-mingw="$mingw_prefix/bin/x86_64-w64-mingw32-gcc" \
+          	--without-netapi \
+          	--with-opencl \
+          	--without-opengl \
+          	--without-oss \
+          	--with-pcap \
+          	--with-pcsclite \
+          	--with-pthread \
+          	--without-pulse \
+          	--without-sane \
+          	--with-sdl \
+          	--without-udev \
+          	--with-unwind \
+          	--without-usb \
+          	--without-v4l2 \
+          	--with-vulkan \
+          	--without-wayland \
+          	--without-x
 
           if command -v sysctl > /dev/null; then
-            nproc="$(sysctl -n hw.logicalcpu)" || true
+          	nproc="$(sysctl -n hw.logicalcpu)" || true
           fi
           if [ -z "$nproc" ] && command -v nproc > /dev/null; then
-            nproc="$(nproc)" || true
+          	nproc="$(nproc)" || true
           fi
           make ${nproc:+-j"$nproc"}
-          make DESTDIR=../../dist install
-      - run: tar -czf ../"winecx-$CX_VERSION-${{ matrix.target }}.tar.gz" -- *
+          make DESTDIR=../../dist install-lib
+      - run: tar cf - -- * | gzip -9 > ../"winecx-$CX_VERSION-${{ matrix.target }}.tar.gz"
         working-directory: dist
       - uses: actions/attest@v4
         with:
