@@ -53,11 +53,9 @@ jobs:
           printf %s "LIBRARY_PATH=$library_path" >> "$GITHUB_ENV"
           path="$(brew --prefix bison)/bin"
           printf %s "$path" >> "$GITHUB_PATH"
-      - name: Build
+      - name: Configure
         working-directory: sources/wine
         run: |
-          export LIBRARY_PATH PATH
-
           mingw_prefix="$(brew --prefix mingw-w64)"
 
           ./configure \
@@ -100,7 +98,9 @@ jobs:
           	--with-vulkan \
           	--without-wayland \
           	--without-x
-
+      - name: Make
+        working-directory: sources/wine
+        run: |
           if command -v sysctl > /dev/null; then
           	nproc="$(sysctl -n hw.logicalcpu)" || true
           fi
@@ -108,9 +108,12 @@ jobs:
           	nproc="$(nproc)" || true
           fi
           make ${nproc:+-j"$nproc"}
-          make DESTDIR=../../dist install-lib
-      - run: tar cf - -- * | gzip -9 > ../"winecx-$CX_VERSION-${{ matrix.target }}.tar.gz"
+          make DESTDIR=../../dist/usr install-lib
+      - name: Package
         working-directory: dist
+        run: |
+          mv "$GITHUB_WORKSPACE/sources/wine/"{LICENSE,README.md} .
+          tar cf - -- * | gzip -9 > ../"winecx-$CX_VERSION-${{ matrix.target }}.tar.gz"
       - uses: actions/attest@v4
         with:
           subject-path: winecx-${{ env.CX_VERSION }}-${{ matrix.target }}.tar.gz
