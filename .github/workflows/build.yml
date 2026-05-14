@@ -98,6 +98,8 @@ jobs:
           	--with-vulkan \
           	--without-wayland \
           	--without-x
+      - run: make tools/install
+        working-directory: sources/wine
       - name: Make `winemac.drv`
         working-directory: sources/wine
         run: |
