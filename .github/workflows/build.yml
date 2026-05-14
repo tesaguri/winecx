@@ -98,7 +98,7 @@ jobs:
           	--with-vulkan \
           	--without-wayland \
           	--without-x
-      - name: Make
+      - name: Make `winemac.drv`
         working-directory: sources/wine
         run: |
           if command -v sysctl > /dev/null; then
@@ -107,8 +107,10 @@ jobs:
           if [ -z "$nproc" ] && command -v nproc > /dev/null; then
           	nproc="$(nproc)" || true
           fi
-          make ${nproc:+-j"$nproc"}
-          make DESTDIR=../../dist/usr install-lib
+          make ${nproc:+-j"$nproc"} dlls/winemac.drv/i386-windows/winemac.drv dlls/winemac.drv/x86_64-windows/winemac.drv dlls/winemac.drv/winemac.so
+          ./tools/install -m 644 -t ../../dist/usr/lib/wine/i386-windows dlls/winemac.drv/i386-windows/winemac.drv
+          ./tools/install -m 644 -t ../../dist/usr/lib/wine/x86_64-windows dlls/winemac.drv/x86_64-windows/winemac.drv
+          ./tools/install --strip-program=strip -m 755 -t ../../dist/usr/lib/wine/x86_64-unix dlls/winemac.drv/winemac.so
       - name: Package
         working-directory: dist
         run: |
@@ -120,7 +122,7 @@ jobs:
       - name: Upload the artifact
         uses: actions/upload-artifact@v7
         with:
-          path: winecx-${{ env.CX_VERSION }}-${{ matrix.target }}.tar.gz
+          path: winemac-cx-${{ env.CX_VERSION }}-${{ matrix.target }}.tar.gz
   release:
     name: Release
     needs: build
