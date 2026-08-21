@@ -23,8 +23,8 @@ jobs:
           - target: x86_64-apple-darwin
             runner: macos-15-intel
     env:
-      CX_VERSION: '26.1.0'
-      CX_TARBALL_SHA256: 'e4ec87d5821a009dd1f1d2e36ffe2e24b8fcbae9516375ea42f95a16928ab8fa'
+      CX_VERSION: '26.3.0'
+      CX_TARBALL_SHA256: 'ac99c8ca4b3848f3e81784135f023df266b61c2345726ea55a50b3e030dd6872'
       WINECX_DEPENDENCIES: 'bison ffmpeg freetype gstreamer mingw-w64 molten-vk pkgconfig'
       CC: clang
       CXX: clang++
